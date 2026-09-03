@@ -1,14 +1,24 @@
 FROM python:3.11-slim AS base
 
 # tesseract-ocr: local OCR engine. libgl1/libglib2.0-0: required by docling's
-# image-processing deps (opencv). All installed from the base image's apt
-# mirror at BUILD time on a connected machine; the resulting image is then
-# transferred whole into the air-gapped environment (docker save/load).
+# image-processing deps (opencv). mdbtools: reads Microsoft Access files
+# (.mdb/.accdb) for the Database Agent (parsers/database_parser.py) --
+# there's no pure-Python Access reader, and mdbtools is a small, standard
+# Debian package. libreoffice-writer/-impress: headless DOC/PPT -> DOCX/PPTX
+# conversion for the Office Agent's legacy-format path
+# (parsers/office_parser.py) -- pulled in as the Writer/Impress components
+# only, not the full `libreoffice` metapackage, to keep the image smaller.
+# All installed from the base image's apt mirror at BUILD time on a
+# connected machine; the resulting image is then transferred whole into the
+# air-gapped environment (docker save/load).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-eng \
     libgl1 \
     libglib2.0-0 \
+    mdbtools \
+    libreoffice-writer \
+    libreoffice-impress \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

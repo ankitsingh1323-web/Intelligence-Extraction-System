@@ -72,9 +72,9 @@ class FileCategory(str, Enum):
     CSV = "csv"
     JSON_ = "json"
     EXCEL = "excel"
-    OFFICE = "office"          # docx/pptx - stub
+    OFFICE = "office"          # docx/pptx, legacy doc/ppt via LibreOffice conversion
     EMAIL = "email"            # stub
-    DATABASE = "database"      # stub
+    DATABASE = "database"      # sqlite, plus mdb/accdb (Access) via mdbtools
     CODE = "code"              # stub
     ARCHIVE = "archive"        # stub
     MEDIA = "media"            # stub

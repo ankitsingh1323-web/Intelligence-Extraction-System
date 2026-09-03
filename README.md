@@ -38,12 +38,13 @@ Upload → File Router (MIME/ext classify)
 ```
 
 Currently wired end-to-end: **PDF, images (OCR), CSV/TSV, JSON/JSONL, Excel
-(.xlsx/.xls), office docs (.docx/.pptx), code/log/text, archives (ZIP/TAR),
-SQLite databases, HTML/XML/GeoJSON, and email (.eml/.mbox)**. Media
-(audio/video) is metadata-only (no speech-to-text). Outlook's proprietary
-.msg/.pst formats and .ods spreadsheets are classified and routed but return
-an honest "not supported" result — see
-[Extending file type support](#extending-file-type-support).
+(.xlsx/.xls), office docs (.docx/.pptx, plus legacy .doc/.ppt via a headless
+LibreOffice conversion), code/log/text, archives (ZIP/TAR), databases
+(SQLite, plus Microsoft Access .mdb/.accdb via mdbtools), HTML/XML/GeoJSON,
+and email (.eml/.mbox)**. Media (audio/video) is metadata-only (no
+speech-to-text). Outlook's proprietary .msg/.pst formats and .ods
+spreadsheets are classified and routed but return an honest "not supported"
+result — see [Extending file type support](#extending-file-type-support).
 
 ## Prerequisites
 
