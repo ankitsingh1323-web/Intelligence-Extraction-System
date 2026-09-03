@@ -23,6 +23,22 @@ from app.storage.obs_settings import (
 logger = logging.getLogger(__name__)
 
 
+class CredentialNotFoundError(Exception):
+    """Raised by list_objects/download_object (not by test_credential or
+    mirror_upload, which are best-effort and never raise) -- both are
+    user-initiated actions against a specific credential_id/prefix the
+    user typed, so a missing credential needs to surface as a real 404,
+    not be silently swallowed the way the upload-mirror's "no active
+    credential" case is."""
+
+
+def _require_credential(credential_id: str) -> OBSCredentialFull:
+    credential = get_credential_full(credential_id)
+    if credential is None:
+        raise CredentialNotFoundError(credential_id)
+    return credential
+
+
 def _normalize_endpoint(endpoint: str) -> str:
     if endpoint.startswith("http://") or endpoint.startswith("https://"):
         return endpoint
@@ -119,3 +135,60 @@ async def mirror_upload(job_id: str, filename: str, content: bytes) -> None:
             "OBS mirror upload failed for %s (job %s) -- file was still saved to local disk normally.",
             filename, job_id,
         )
+
+
+async def list_objects(credential_id: str, prefix: str, max_keys: int = 500) -> tuple[list[dict], bool]:
+    """Lists objects under `prefix` in the credential's bucket -- the
+    browse step behind the Upload page's "start analysis from object
+    storage" flow (list what's there, the user ticks which ones to bring
+    in, ingest_from_obs in routes_ingest.py downloads exactly those).
+
+    Unlike mirror_upload/test_credential, this is a user-initiated action
+    against a specific bucket/prefix they typed, so a real failure here
+    (bad credential, unreachable endpoint, no list permission) needs to
+    reach them as an actual error -- raises CredentialNotFoundError or
+    whatever boto3 exception the listing call itself produces, rather
+    than swallowing it.
+
+    Returns (objects, truncated) -- truncated is True when the bucket has
+    more than max_keys matching objects, so the caller can tell the user
+    to narrow the prefix instead of silently showing a partial list as
+    if it were everything.
+    """
+    credential = _require_credential(credential_id)
+
+    def _list() -> tuple[list[dict], bool]:
+        client = _client_for(credential)
+        resp = client.list_objects_v2(Bucket=credential.bucket, Prefix=prefix, MaxKeys=max_keys)
+        objects = [
+            {
+                "key": obj["Key"],
+                "size": obj["Size"],
+                "last_modified": obj["LastModified"].isoformat() if obj.get("LastModified") else "",
+            }
+            for obj in resp.get("Contents", [])
+            # Skip zero-byte "directory marker" keys ending in "/" that
+            # some tools create to represent an empty folder -- nothing
+            # there to download or analyze.
+            if not obj["Key"].endswith("/")
+        ]
+        return objects, bool(resp.get("IsTruncated"))
+
+    return await asyncio.to_thread(_list)
+
+
+async def download_object(credential_id: str, key: str) -> bytes:
+    """Downloads one object's bytes, for pulling a selected file down into
+    the job's own local upload directory (see routes_ingest.py's
+    ingest_from_obs) so the rest of the pipeline -- parsing, extraction,
+    the dataset library, the OBS upload mirror itself -- works identically
+    regardless of whether a file arrived via browser upload or from a
+    bucket. Same "must raise, not swallow" reasoning as list_objects."""
+    credential = _require_credential(credential_id)
+
+    def _get() -> bytes:
+        client = _client_for(credential)
+        response = client.get_object(Bucket=credential.bucket, Key=key)
+        return response["Body"].read()
+
+    return await asyncio.to_thread(_get)

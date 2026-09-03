@@ -1,5 +1,5 @@
 import type {
-  ChatMessage, ChatResponse, DataDumpTable, Job, OBSCredential, OBSCredentialInput,
+  ChatMessage, ChatResponse, DataDumpTable, Job, OBSBrowseResult, OBSCredential, OBSCredentialInput,
   OBSSettings, OBSTestResult, SourceDocSummary, StructuredDataCatalog,
 } from "./types";
 
@@ -24,6 +24,14 @@ export async function uploadFiles(files: File[]): Promise<Job> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   return req<Job>("/ingest", { method: "POST", body: form });
+}
+
+export async function ingestFromObs(credentialId: string, keys: string[]): Promise<Job> {
+  return req<Job>("/ingest/obs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential_id: credentialId, keys }),
+  });
 }
 
 export async function getJob(jobId: string): Promise<Job> {
@@ -151,4 +159,9 @@ export async function activateObsCredential(credentialId: string): Promise<OBSSe
 
 export async function testObsCredential(credentialId: string): Promise<OBSTestResult> {
   return req<OBSTestResult>(`/settings/obs/credentials/${credentialId}/test`, { method: "POST" });
+}
+
+export async function browseObsCredential(credentialId: string, prefix: string): Promise<OBSBrowseResult> {
+  const params = new URLSearchParams({ prefix });
+  return req<OBSBrowseResult>(`/settings/obs/credentials/${credentialId}/browse?${params}`);
 }

@@ -5,11 +5,12 @@ storage/obs_settings.py, and editable from the frontend's Settings page.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.models.schemas import OBSCredentialPublic, OBSSettings
+from app.models.schemas import OBSBrowseResult, OBSCredentialPublic, OBSObjectSummary, OBSSettings
 from app.storage import obs_client, obs_settings
+from app.storage.obs_client import CredentialNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -102,3 +103,22 @@ async def activate_obs_credential(credential_id: str) -> OBSSettings:
 async def test_obs_credential(credential_id: str) -> TestResult:
     ok, detail = await obs_client.test_credential(credential_id)
     return TestResult(ok=ok, detail=detail)
+
+
+@router.get("/obs/credentials/{credential_id}/browse", response_model=OBSBrowseResult)
+async def browse_obs_credential(credential_id: str, prefix: str = Query("")) -> OBSBrowseResult:
+    """Backs the Upload page's "start analysis from object storage" flow
+    -- lists what's under `prefix` in this credential's bucket so the
+    user can tick which files to bring into a new job (see
+    routes_ingest.ingest_from_obs, which downloads exactly the keys
+    selected here)."""
+    try:
+        objects, truncated = await obs_client.list_objects(credential_id, prefix)
+    except CredentialNotFoundError:
+        raise HTTPException(404, "Credential not found.")
+    except Exception as exc:  # noqa: BLE001 -- a real bucket/network failure, surface it plainly
+        raise HTTPException(502, f"Could not list objects: {exc}")
+    return OBSBrowseResult(
+        objects=[OBSObjectSummary(**obj) for obj in objects],
+        truncated=truncated,
+    )

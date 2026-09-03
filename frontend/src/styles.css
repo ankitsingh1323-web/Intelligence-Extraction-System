@@ -161,6 +161,38 @@ a { color: var(--accent); text-decoration: none; }
 .dropzone-title { font-weight: 600; font-size: 14px; color: var(--text); }
 .dropzone-sub { font-size: 12px; color: var(--muted); }
 
+.source-mode-tabs {
+  display: flex; gap: 4px; background: var(--bg3); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px; width: 100%;
+}
+.source-mode-tab {
+  flex: 1; background: none; border: none; border-radius: 6px; padding: 9px 14px;
+  font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; transition: background .15s, color .15s;
+}
+.source-mode-tab.is-active { background: var(--bg2); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.source-mode-tab:hover:not(.is-active) { color: var(--text); }
+
+.obs-source-panel { width: 100%; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.obs-source-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.obs-source-row .obs-field { min-width: 160px; }
+.obs-source-row select {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 9px 11px;
+  color: var(--text); font-size: 13px; width: 100%;
+}
+.obs-source-row select:focus { outline: none; border-color: var(--accent); }
+.obs-browse-btn { align-self: flex-end; white-space: nowrap; }
+.obs-object-list-head { display: flex; align-items: center; justify-content: space-between; }
+.obs-object-list {
+  display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg2); padding: 6px;
+}
+.obs-object-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 5px; cursor: pointer;
+}
+.obs-object-row:hover { background: var(--bg3); }
+.obs-object-row input[type="checkbox"] { flex-shrink: 0; accent-color: var(--accent); }
+.obs-object-row .file-name { flex: 1; word-break: break-all; }
+
 .filetype-row { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
 .filetype-chip {
   font-family: var(--font-mono); font-size: 11px; padding: 5px 11px;

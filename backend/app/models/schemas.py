@@ -218,6 +218,24 @@ class OBSSettings(BaseModel):
     credentials: list[OBSCredentialPublic] = []
 
 
+class OBSObjectSummary(BaseModel):
+    """One object returned by browsing a bucket/prefix -- see
+    storage/obs_client.list_objects. key is the full object key (path
+    within the bucket), used both for display and as what the user
+    selects to bring into a new analysis job."""
+    key: str
+    size: int
+    last_modified: str
+
+
+class OBSBrowseResult(BaseModel):
+    objects: list[OBSObjectSummary]
+    # True when the bucket/prefix has more matching objects than the
+    # listing call's max_keys cap -- the frontend uses this to tell the
+    # user to narrow the prefix rather than assuming this is everything.
+    truncated: bool
+
+
 class ParsedDocument(BaseModel):
     """Unified output of every L2 file-type agent."""
     source_file: str

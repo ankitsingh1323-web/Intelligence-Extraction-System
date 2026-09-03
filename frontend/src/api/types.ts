@@ -321,3 +321,14 @@ export interface OBSTestResult {
   ok: boolean;
   detail: string;
 }
+
+export interface OBSObjectSummary {
+  key: string;
+  size: number;
+  last_modified: string;
+}
+
+export interface OBSBrowseResult {
+  objects: OBSObjectSummary[];
+  truncated: boolean;
+}
