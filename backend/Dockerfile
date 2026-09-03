@@ -1,24 +1,14 @@
 FROM python:3.11-slim AS base
 
 # tesseract-ocr: local OCR engine. libgl1/libglib2.0-0: required by docling's
-# image-processing deps (opencv). mdbtools: reads Microsoft Access files
-# (.mdb/.accdb) for the Database Agent (parsers/database_parser.py) --
-# there's no pure-Python Access reader, and mdbtools is a small, standard
-# Debian package. libreoffice-writer/-impress: headless DOC/PPT -> DOCX/PPTX
-# conversion for the Office Agent's legacy-format path
-# (parsers/office_parser.py) -- pulled in as the Writer/Impress components
-# only, not the full `libreoffice` metapackage, to keep the image smaller.
-# All installed from the base image's apt mirror at BUILD time on a
-# connected machine; the resulting image is then transferred whole into the
-# air-gapped environment (docker save/load).
+# image-processing deps (opencv). All installed from the base image's apt
+# mirror at BUILD time on a connected machine; the resulting image is then
+# transferred whole into the air-gapped environment (docker save/load).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-eng \
     libgl1 \
     libglib2.0-0 \
-    mdbtools \
-    libreoffice-writer \
-    libreoffice-impress \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -244,6 +234,31 @@ print('Docling model artifacts cached OK.')"
 # place.
 ENV HF_HUB_OFFLINE=1
 ENV TRANSFORMERS_OFFLINE=1
+
+# mdbtools: reads Microsoft Access files (.mdb/.accdb) for the Database
+# Agent (parsers/database_parser.py) -- there's no pure-Python Access
+# reader, and mdbtools is a small, standard Debian package.
+# libreoffice-writer/-impress: headless DOC/PPT -> DOCX/PPTX conversion for
+# the Office Agent's legacy-format path (parsers/office_parser.py) --
+# pulled in as the Writer/Impress components only, not the full
+# `libreoffice` metapackage, to keep the image smaller. (Both components
+# are required -- libreoffice-core alone cannot load any document format,
+# not even plain text, and exits with a bootstrap crash.)
+#
+# Deliberately its own RUN block down here, not folded into the
+# tesseract/libgl apt-get near the top of this file: Docker's build cache
+# invalidates every layer AFTER the first one that changes, so adding
+# packages to that early layer would force a full rebuild of every layer
+# below it on the next `docker compose build` -- torch's 174MB download,
+# every pip requirements/*.txt group, and both live model downloads above
+# -- for what should be a 2-minute apt-get. Placed after those instead, so
+# a machine that already built an image before this file changed reuses
+# all of that expensive work and only re-runs this small layer onward.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    mdbtools \
+    libreoffice-writer \
+    libreoffice-impress \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
 
