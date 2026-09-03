@@ -9,10 +9,14 @@ const ACTIVE_STATUSES = new Set(["queued", "parsing", "extracting", "graph_build
 export default function HistoryPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    listJobs().then(setJobs).finally(() => setLoading(false));
+    listJobs()
+      .then((j) => { setJobs(j); setError(null); })
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load job history."))
+      .finally(() => setLoading(false));
   }, []);
 
   async function handleDelete(e: React.MouseEvent, job: Job) {
@@ -41,7 +45,8 @@ export default function HistoryPage() {
   return (
     <div className="page-narrow">
       <h1 className="page-title">Job History</h1>
-      {jobs.length === 0 && <p className="page-sub">No analyses run yet.</p>}
+      {error && <div className="error-banner">Couldn't load job history: {error}</div>}
+      {!error && jobs.length === 0 && <p className="page-sub">No analyses run yet.</p>}
       <div className="job-list">
         {jobs.map((job) => (
           <Link key={job.job_id} to={`/jobs/${job.job_id}`} className="job-row">

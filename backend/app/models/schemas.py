@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _id() -> str:
@@ -34,6 +34,36 @@ def _utc_now() -> datetime:
     that took a couple of minutes on a UTC+4 machine (240 = 4h, not a
     coincidence). Use this everywhere instead of datetime.utcnow()."""
     return datetime.now(timezone.utc)
+
+
+def _ensure_utc(v: datetime | None) -> datetime | None:
+    """Normalizes a naive datetime to UTC-aware, leaving an already-aware
+    one untouched. Applied as a field_validator on every persisted
+    datetime field below (Job.created_at/updated_at/completed_at,
+    AgentActivity.started_at/finished_at) so it runs on EVERY path a
+    value can enter a model -- both a fresh instance built with _utc_now
+    (already aware, a no-op here) and Job.model_validate_json() loading
+    an old job_state.json written before this file's naive/aware fix
+    (see _utc_now's docstring), which deserializes as naive with no
+    offset in the JSON to recover one from.
+
+    Without this, JobManager.list_jobs() mixes naive (pre-fix, loaded
+    from disk) and aware (every job created since) datetimes in the same
+    in-memory registry, and `sorted(jobs, key=lambda j: j.created_at)`
+    raises "TypeError: can't compare offset-naive and offset-aware
+    datetimes" the instant both kinds coexist -- which turns GET
+    /api/jobs into a 500 for any deployment old enough to have pre-fix
+    job state still on disk, silently hiding EVERY job (not just new
+    ones) since the frontend's History page has no error handling around
+    that fetch and just renders "no analyses run yet" on any failure.
+    Assumes UTC for a naive value, matching what this app always
+    intended -- correct in every environment this deployment has ever
+    run in, since _utc_now() is the only writer of these fields and it's
+    always been UTC-aware in intent, even on the runs where the naive
+    utcnow() bug meant the offset never made it into the JSON."""
+    if v is not None and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
 
 
 class FileCategory(str, Enum):
@@ -524,6 +554,8 @@ class AgentActivity(BaseModel):
     finished_at: datetime | None = None
     duration_ms: int | None = None
 
+    _normalize_tz = field_validator("started_at", "finished_at", mode="after")(_ensure_utc)
+
 
 class BatchSummary(BaseModel):
     """Deterministic (no LLM call) checkpoint summary shown to the user
@@ -578,6 +610,8 @@ class Job(BaseModel):
     # frontend can show an accurate, differently-worded notice instead of
     # this appearing under "Service connectivity issues detected."
     stopped_early: bool = False
+
+    _normalize_tz = field_validator("created_at", "updated_at", "completed_at", mode="after")(_ensure_utc)
 
 
 # -------------------------------------------------------------------- chat --

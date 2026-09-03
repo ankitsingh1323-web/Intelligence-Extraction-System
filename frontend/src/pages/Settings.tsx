@@ -94,7 +94,9 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    refresh().finally(() => setLoading(false));
+    refresh()
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load settings."))
+      .finally(() => setLoading(false));
   }, []);
 
   async function toggleEnabled() {
@@ -206,7 +208,13 @@ export default function SettingsPage() {
   }
 
   if (loading) return <div className="page-wide">Loading…</div>;
-  if (!settings) return <div className="page-wide">Could not load settings.</div>;
+  if (!settings) {
+    return (
+      <div className="page-wide">
+        <div className="obs-inline-error">Could not load settings{error ? `: ${error}` : "."}</div>
+      </div>
+    );
+  }
 
   const formValid = !!(
     form.name.trim() && form.endpoint.trim() && form.bucket.trim() && form.access_key.trim() &&

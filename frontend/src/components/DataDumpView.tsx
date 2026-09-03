@@ -131,13 +131,18 @@ function SchemaGroupCard({ group }: { group: OracleSchemaGroup }) {
 function StructuredDataSchemaSection({ jobId }: { jobId: string }) {
   const [catalog, setCatalog] = useState<StructuredDataCatalog | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    getDataDumpSchema(jobId).then(setCatalog).finally(() => setLoading(false));
+    getDataDumpSchema(jobId)
+      .then((c) => { setCatalog(c); setError(null); })
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load the structured data schema."))
+      .finally(() => setLoading(false));
   }, [jobId]);
 
   if (loading) return <p className="muted">Loading…</p>;
+  if (error) return <div className="error-banner">Couldn't load the schema catalog: {error}</div>;
   if (!catalog || catalog.groups.length === 0) {
     return <p className="muted">No structured (CSV/Excel/Database) files were part of this job.</p>;
   }
