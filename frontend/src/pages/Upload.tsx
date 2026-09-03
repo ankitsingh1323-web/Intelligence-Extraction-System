@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { browseObsCredential, getObsSettings, ingestFromObs, uploadFiles } from "../api/client";
 import type { OBSObjectSummary, OBSSettings } from "../api/types";
 import { RobotIcon } from "../components/RobotIcon";
@@ -28,10 +28,10 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  // Object storage source -- only offered at all once OBS is enabled and
-  // has at least one saved credential (see Settings > Storage); otherwise
-  // this deployment has nothing to browse and the tab stays hidden so the
-  // default, fully air-gapped case looks exactly like it always has.
+  // Object storage source -- the "From Object Storage" tab is always
+  // visible (see obsAvailable below) so people discover the feature exists
+  // even on a deployment that hasn't configured it yet; the tab's own
+  // content then prompts to finish setup in Settings instead of hiding.
   const [obsSettings, setObsSettings] = useState<OBSSettings | null>(null);
   const [obsCredentialId, setObsCredentialId] = useState("");
   const [obsPrefix, setObsPrefix] = useState("");
@@ -50,10 +50,10 @@ export default function UploadPage() {
       })
       .catch(() => {
         // OBS is an optional feature -- if this deployment's backend is
-        // older or the call fails for any reason, the "From Object
-        // Storage" tab simply never appears (obsSettings stays null),
-        // same as if it were never enabled. The default upload flow
-        // below doesn't depend on this succeeding at all.
+        // older or the call fails for any reason, obsSettings just stays
+        // null and the tab's content falls back to the "set it up in
+        // Settings" prompt, same as a freshly-disabled deployment. The
+        // default upload flow below doesn't depend on this succeeding.
       });
   }, []);
 
@@ -143,24 +143,22 @@ export default function UploadPage() {
         models, and hands back a briefing you can question directly.
       </p>
 
-      {obsAvailable && (
-        <div className="source-mode-tabs">
-          <button
-            className={`source-mode-tab${mode === "upload" ? " is-active" : ""}`}
-            onClick={() => setMode("upload")}
-            type="button"
-          >
-            Upload Files
-          </button>
-          <button
-            className={`source-mode-tab${mode === "obs" ? " is-active" : ""}`}
-            onClick={() => setMode("obs")}
-            type="button"
-          >
-            From Object Storage
-          </button>
-        </div>
-      )}
+      <div className="source-mode-tabs">
+        <button
+          className={`source-mode-tab${mode === "upload" ? " is-active" : ""}`}
+          onClick={() => setMode("upload")}
+          type="button"
+        >
+          Upload Files
+        </button>
+        <button
+          className={`source-mode-tab${mode === "obs" ? " is-active" : ""}`}
+          onClick={() => setMode("obs")}
+          type="button"
+        >
+          From Object Storage
+        </button>
+      </div>
 
       {mode === "upload" && (
         <>
@@ -203,7 +201,18 @@ export default function UploadPage() {
         </>
       )}
 
-      {mode === "obs" && (
+      {mode === "obs" && !obsAvailable && (
+        <div className="obs-source-panel obs-source-empty">
+          <p className="muted">Object Storage isn't set up on this deployment yet.</p>
+          <p className="muted small">
+            Enable it and add a bucket credential in Settings to start an analysis directly from a
+            bucket, without uploading files by hand.
+          </p>
+          <Link to="/settings" className="btn-secondary">Open Settings →</Link>
+        </div>
+      )}
+
+      {mode === "obs" && obsAvailable && (
         <div className="obs-source-panel">
           <div className="obs-source-row">
             <div className="obs-field">

@@ -173,6 +173,11 @@ a { color: var(--accent); text-decoration: none; }
 .source-mode-tab:hover:not(.is-active) { color: var(--text); }
 
 .obs-source-panel { width: 100%; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.obs-source-empty {
+  align-items: center; text-align: center; gap: 8px; padding: 28px 20px;
+  border: 1px dashed var(--line); border-radius: 8px;
+}
+.obs-source-empty .btn-secondary { margin-top: 8px; text-decoration: none; display: inline-block; }
 .obs-source-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .obs-source-row .obs-field { min-width: 160px; }
 .obs-source-row select {
