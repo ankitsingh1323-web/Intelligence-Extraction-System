@@ -38,8 +38,10 @@ Upload → File Router (MIME/ext classify)
 ```
 
 Currently wired end-to-end: **PDF, images (OCR), CSV/TSV, JSON/JSONL, Excel
-(.xlsx/.xls), office docs (.docx/.pptx, plus legacy .doc/.ppt via a headless
-LibreOffice conversion), code/log/text, archives (ZIP/TAR), databases
+(.xlsx/.xls), office docs (.docx/.pptx, plus legacy .doc/.ppt, .rtf, and .odt via a
+headless LibreOffice conversion -- with header/footer text, grouped
+shapes, and PPTX chart data extracted too), code/log/text, archives
+(ZIP/TAR), databases
 (SQLite, plus Microsoft Access .mdb/.accdb via mdbtools), HTML/XML/GeoJSON,
 and email (.eml/.mbox)**. Media (audio/video) is metadata-only (no
 speech-to-text). Outlook's proprietary .msg/.pst formats and .ods
