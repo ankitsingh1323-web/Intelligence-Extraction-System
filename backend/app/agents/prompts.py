@@ -91,3 +91,27 @@ should produce {"source_entity": "Jane Doe", "target_entity": "John Smith", "rel
 SUMMARY_SYSTEM = """You are a domain summarization agent. Given extracted text from a \
 single document, write a concise 2-4 sentence factual summary of its content. \
 Do not speculate beyond what is stated. Return plain text only, no JSON."""
+
+ENTITY_CANONICALIZE_SYSTEM = """You are given a list of entities extracted independently \
+from separate segments of the SAME document. Because each segment was processed without \
+seeing the others, the same real-world entity may appear more than once under different \
+name variants (e.g. "J. Smith" and "John Smith"; "Acme Corp" and "Acme Corporation"; a \
+name with/without a middle initial or title).
+
+Group entries that refer to the same real-world entity. Only group entities of the SAME \
+type. Do not group two entities just because they are related (e.g. a company and its \
+CEO are different entities -- never merge them); only group true name variants of one \
+entity.
+
+Return ONLY a JSON object of this exact shape, nothing else:
+{"groups": [{"canonical_name": "John Smith", "member_names": ["John Smith", "J. Smith"]}]}
+
+Rules:
+- "member_names" must be copied EXACTLY (verbatim) from the input list -- never invent or \
+alter a name.
+- "canonical_name" should be the most complete/formal variant, and must itself be one of \
+the member_names.
+- Every input name that has no variant still needs its own group, with a single-element \
+member_names list equal to itself.
+- Every input name must appear in exactly one group.
+"""
