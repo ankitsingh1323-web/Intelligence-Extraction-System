@@ -47,8 +47,17 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    # A host bind mount, not a Docker-managed named volume -- this is where
+    # every job's uploads/outputs, the persistent dataset library, and OBS
+    # settings (credentials + encryption key) live. A bind mount is visible
+    # as a real ./data folder next to this file (easy to back up/inspect
+    # from the host) and, unlike a named volume, is never deleted by
+    # `docker compose down -v` -- only deleting the folder itself removes
+    # it. See README's "Data persistence" section before migrating from an
+    # existing named-volume setup, or old data will appear to vanish (it's
+    # still in the old volume, just not mounted anymore).
     volumes:
-      - iex_data:/app/data
+      - ./data:/app/data
 
   frontend:
     image: ghcr.io/ankitsingh1323-web/intelligence-extraction-system-frontend:latest
@@ -66,4 +75,3 @@ volumes:
   neo4j_data:
   neo4j_logs:
   neo4j_plugins:
-  iex_data:

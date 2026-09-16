@@ -286,6 +286,47 @@ these from your browser and save them at the matching path:
 
 Then rebuild the same way. These are also gitignored and never committed.
 
+## Data persistence
+
+Everything that needs to survive a restart -- job uploads/outputs, job
+history, the persistent cross-job structured-data library
+(`dataset_library.db`), and OBS (object storage) settings including the
+Fernet encryption key and encrypted credentials -- lives under `/app/data`
+inside the backend container, bind-mounted to a `./data` folder next to
+this file (`docker-compose.yml`'s `backend.volumes`). Because it's a real
+host folder rather than a Docker-managed named volume:
+
+- It's visible and backupable directly from the host -- just copy `./data`.
+- `docker compose build`, `up -d`, `up -d --force-recreate`, and `restart`
+  never touch it, the same as before.
+- Unlike a named volume, **`docker compose down -v` does not delete it
+  either** -- `-v` only removes volumes Docker itself manages, and a bind
+  mount isn't one.
+- `./data` is gitignored (it holds an encryption key and encrypted
+  credentials) -- never commit it.
+
+**Migrating from an older checkout that used the `iex_data` named volume:**
+switching the mount type doesn't move existing data automatically -- do
+this once, in order, before pulling/rebuilding with the new
+`docker-compose.yml`:
+
+```powershell
+# 1. With the OLD docker-compose.yml still in place and the backend
+#    container running, copy its data out to a new local ./data folder:
+docker cp iex-backend:/app/data .\data
+
+# 2. Now pull the updated docker-compose.yml (switches the mount to ./data):
+git pull origin claude/repo-connection-setup-ss6t4p
+
+# 3. Recreate the backend so it picks up the new bind mount:
+docker compose up -d --pull never
+
+# 4. Verify your OBS settings/job history are still there, then optionally
+#    remove the now-unused old volume (find its exact name first):
+docker volume ls
+docker volume rm <project-name>_iex_data
+```
+
 ## Using it
 
 1. Open the frontend, drop in files (PDF, images, CSV, JSON, Excel — mix

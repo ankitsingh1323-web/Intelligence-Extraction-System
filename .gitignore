@@ -11,10 +11,15 @@ backend/.env
 .env
 !.env.example
 
-# Data
+# Data -- /data (repo root) is the docker-compose.yml bind mount for
+# /app/data: job uploads/outputs, the persistent dataset library, and OBS
+# settings, INCLUDING the Fernet encryption key and encrypted credentials
+# (storage/obs_settings.py). Ignore the whole tree, not just subfolders --
+# these files must never be committed. backend/data/ covers the same
+# concern when running the backend directly (outside Docker) from
+# backend/, where a relative ./data path resolves there instead.
+/data/
 backend/data/
-data/uploads/
-data/outputs/
 
 # Node / frontend
 frontend/node_modules/
