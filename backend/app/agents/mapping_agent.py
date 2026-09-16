@@ -74,6 +74,15 @@ _ENTITY_ARCHETYPES: dict[str, set[str]] = {
     "School": {"school", "campus", "district"},
     "Facility": {"facility", "site", "building", "location"},
     "Asset": {"asset", "equipment", "serial"},
+    # Investigation/compliance-flavored archetypes -- this app's structured
+    # uploads often skew toward due-diligence and AML-style material
+    # (transaction ledgers, counterparty lists, case files), not just
+    # generic retail/HR data, so a table naming itself after who it
+    # actually represents (a counterparty, a case) reads far more like a
+    # usable investigative artifact than a generic "X enriched with Y".
+    "Counterparty": {"counterparty", "payee", "beneficiary", "payer", "sender", "receiver"},
+    "Case": {"case", "matter", "investigation", "incident", "alert"},
+    "Contract": {"contract", "agreement", "clause", "term"},
 }
 _ENTITY_MIN_SCORE = 2
 
@@ -279,9 +288,13 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
                 total_child = len(child_values)
                 quality_bits = [f"{matched} of {total_child} matched ({matched / total_child:.0%})" if total_child else f"{matched} matched"]
                 if total_child and child_only / total_child >= _ORPHAN_RATIO_THRESHOLD:
-                    quality_bits.append(f"{child_only} {child_name} row(s) reference an unknown {parent_name} key")
+                    quality_bits.append(
+                        f"{child_only} {child_name} row(s) reference a {parent_name} key not found anywhere "
+                        f"else in this upload -- worth a closer look (missing/uploaded-separately record, or "
+                        f"a genuine data-entry discrepancy)"
+                    )
                 if parent_only:
-                    quality_bits.append(f"{parent_only} {parent_name} row(s) have no matching {child_name}")
+                    quality_bits.append(f"{parent_only} {parent_name} row(s) have no corresponding {child_name} activity")
 
                 columns = (
                     _table_columns(child_file, child_label, child_table, join_condition, dq_lookup)
@@ -301,9 +314,11 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
 
                 proposals.append(BITableProposal(
                     name=name,
-                    purpose=f"Links every {child_name} record to its {parent_name} attributes via {target}, "
-                             f"so {child_name.lower()} can be analyzed by {parent_name.lower()} dimensions "
-                             f"without a manual join.",
+                    purpose=f"Consolidates every {child_name} record with its {parent_name} context via "
+                             f"{target}, giving analysts one queryable view to trace how {child_name.lower()} "
+                             f"activity connects to {parent_name.lower()} records -- cross-referencing, "
+                             f"due-diligence, and anomaly review that would otherwise mean manually joining "
+                             f"separate source files by hand.",
                     grain=f"One row per {child_name} record.",
                     source_files=sorted({child_file, parent_file}),
                     columns=columns,
@@ -325,7 +340,10 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
         name = entity or _short_name(result.source_file, table)
         proposals.append(BITableProposal(
             name=name,
-            purpose="Standardized single-source table -- no matching key found in another uploaded file.",
+            purpose="Standardized, analysis-ready on its own -- no shared key was found linking it to "
+                    "another uploaded source, so treat it as an independent line of evidence for now. If "
+                    "a connecting reference (a shared ID, name, account number, ...) turns up in another "
+                    "file on a future upload, it will be cross-linked automatically.",
             grain=f"One row per record in {label}.",
             source_files=[result.source_file],
             columns=columns,
