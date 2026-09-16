@@ -12,6 +12,8 @@ import os
 import shutil
 from pathlib import Path
 
+import pandas as pd
+
 from app.config import get_settings
 from app.models.schemas import Job, SynthesisOutput, TableBlock
 
@@ -265,3 +267,45 @@ def write_tables_csv(job_id: str, tables: list[TableBlock]) -> list[str]:
         path.write_text(buf.getvalue(), encoding="utf-8")
         paths.append(str(path))
     return paths
+
+
+def write_tables_parquet(job_id: str, source_file: str, tables: list[TableBlock]) -> list[str]:
+    """Writes every structured table extracted from one file as its own
+    Parquet file, under a job-scoped folder that accumulates across all of
+    a job's files as they're processed.
+
+    Called per-file during extraction (see agents/domain_managers.py) with
+    doc.full_tables -- the same uncapped table set already mirrored into
+    the structured-query store and the persistent dataset library -- not
+    the 500-row-capped `tables` write_tables_csv uses once at the very
+    end. So unlike the CSV export, this is the complete structured data
+    for the job, not a preview.
+
+    Best-effort per table: one malformed table (e.g. ragged rows pandas
+    can't align to its header) is logged and skipped rather than losing
+    every other table in the same file.
+    """
+    d = job_output_dir(job_id) / "tables_parquet"
+    d.mkdir(parents=True, exist_ok=True)
+    source_stem = Path(source_file).stem.replace("/", "_").replace(" ", "_")[:40]
+    paths = []
+    for t in tables:
+        if not t.rows:
+            continue
+        name_base = (t.caption or t.table_id).replace("/", "_").replace(" ", "_")[:60]
+        path = d / f"{source_stem}__{name_base}_{t.table_id}.parquet"
+        try:
+            columns = t.headers if t.headers and len(t.headers) == len(t.rows[0]) else None
+            df = pd.DataFrame(t.rows, columns=columns)
+            df.to_parquet(path, index=False, engine="pyarrow")
+            paths.append(str(path))
+        except Exception:
+            logger.exception("Failed to write Parquet for table %s in %s", t.table_id, source_file)
+    return paths
+
+
+def list_tables_parquet(job_id: str) -> list[str]:
+    d = job_output_dir(job_id) / "tables_parquet"
+    if not d.exists():
+        return []
+    return sorted(p.name for p in d.iterdir() if p.suffix == ".parquet")

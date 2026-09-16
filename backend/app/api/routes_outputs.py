@@ -22,7 +22,7 @@ from app.models.schemas import (
 )
 from app.pipeline.job_manager import get_job_manager
 from app.storage import dataset_library
-from app.storage.file_store import job_output_dir, job_upload_dir
+from app.storage.file_store import job_output_dir, job_upload_dir, list_tables_parquet
 
 logger = logging.getLogger(__name__)
 
@@ -185,3 +185,23 @@ async def download_table(job_id: str, table_filename: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "Table file not found.")
     return FileResponse(path, media_type="text/csv", filename=table_filename)
+
+
+@router.get("/outputs/{job_id}/data-dump/parquet-tables", response_model=list[str])
+async def list_parquet_tables(job_id: str) -> list[str]:
+    """Filenames of this job's complete structured data, one Parquet file
+    per table (see storage/file_store.write_tables_parquet) -- written
+    per-file during extraction from the uncapped table set, so this list
+    can be non-empty even before the job finishes; unlike the CSV table
+    export it isn't capped to a 500-row preview."""
+    _completed_job(job_id)
+    return list_tables_parquet(job_id)
+
+
+@router.get("/outputs/{job_id}/files/tables-parquet/{table_filename}")
+async def download_table_parquet(job_id: str, table_filename: str) -> FileResponse:
+    _completed_job(job_id)
+    path = job_output_dir(job_id) / "tables_parquet" / Path(table_filename).name
+    if not path.exists():
+        raise HTTPException(404, "Parquet table file not found.")
+    return FileResponse(path, media_type="application/octet-stream", filename=table_filename)

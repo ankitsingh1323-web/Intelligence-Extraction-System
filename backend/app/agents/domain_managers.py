@@ -23,6 +23,7 @@ from app.models.schemas import DomainResult, FileCategory, Job
 from app.parsers.router import classify, parse_file
 from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage import dataset_library, structured_store
+from app.storage.file_store import write_tables_parquet
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,17 @@ async def process_file(
             doc.warnings.append(
                 "Saving this file's tables to the dataset library failed -- they were still indexed for chat."
             )
+
+        # Third independent best-effort write of the same uncapped table
+        # set: a Parquet file per table under this job's output directory
+        # (see storage/file_store.write_tables_parquet), so every job's
+        # complete structured data is available as a portable columnar
+        # file on disk, not just queryable through the app's own stores.
+        try:
+            await asyncio.to_thread(write_tables_parquet, job.job_id, file_path, structured_tables)
+        except Exception:
+            logger.exception("Parquet export failed for %s", file_path)
+            doc.warnings.append("Saving this file's tables as Parquet failed -- they were still indexed for chat.")
 
     activity = start_activity(job, "Translator", file_path)
     try:
