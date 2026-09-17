@@ -10,6 +10,10 @@ from app.parsers.base import BaseParser
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS = 500
+# See csv_parser.MAX_TEXT_PREVIEW_ROWS -- same reasoning: without a text
+# rendering of actual rows, NER/PII/Financial/Relation extraction only
+# ever saw column-statistics profile text, never real cell values.
+MAX_TEXT_PREVIEW_ROWS = 200
 # See csv_parser.MAX_STRUCTURED_ROWS -- same rationale, per sheet here.
 MAX_STRUCTURED_ROWS = 200_000
 
@@ -49,6 +53,11 @@ class ExcelParser(BaseParser):
                 for col in df.columns:
                     profile.append(f"  '{col}': dtype={df[col].dtype}, nulls={df[col].isna().mean()*100:.1f}%")
                 doc.text_blocks.append(TextBlock(text="\n".join(profile), kind="paragraph"))
+
+                for _, row in df.head(MAX_TEXT_PREVIEW_ROWS).fillna("").astype(str).iterrows():
+                    line = "; ".join(f"{col}={val}" for col, val in row.items() if val)
+                    if line:
+                        doc.text_blocks.append(TextBlock(text=f"[{sheet_name}] {line}", kind="paragraph"))
 
                 preview = df.head(MAX_PREVIEW_ROWS).fillna("").astype(str)
                 doc.tables.append(TableBlock(

@@ -26,6 +26,13 @@ MAX_ROWS_PER_TABLE = 500
 # See csv_parser.MAX_STRUCTURED_ROWS -- same rationale, per table here.
 MAX_STRUCTURED_ROWS = 200_000
 MDB_TIMEOUT_S = 60
+# See csv_parser.MAX_TEXT_PREVIEW_ROWS -- same reasoning: NER/PII/
+# Financial/Relation extraction only ever runs on doc.full_text(), which
+# used to contain nothing but "Table 'X': N rows, columns: A, B, C" --
+# schema description, no actual cell values -- so those agents never had
+# any real names/PII/amounts to find in a database file, regardless of
+# what the data actually held.
+MAX_TEXT_PREVIEW_ROWS = 200
 
 
 class DatabaseParser(BaseParser):
@@ -38,6 +45,15 @@ class DatabaseParser(BaseParser):
         if file_path.lower().endswith((".mdb", ".accdb")):
             return self._parse_access(file_path)
         return self._parse_sqlite(file_path)
+
+    @staticmethod
+    def _row_text_blocks(table: str, headers: list[str], rows: list[list[str]]) -> list[TextBlock]:
+        blocks = []
+        for row in rows[:MAX_TEXT_PREVIEW_ROWS]:
+            line = "; ".join(f"{h}={v}" for h, v in zip(headers, row) if v)
+            if line:
+                blocks.append(TextBlock(text=f"[{table}] {line}", kind="paragraph"))
+        return blocks
 
     def _parse_sqlite(self, file_path: str) -> ParsedDocument:
         doc = ParsedDocument(source_file=file_path, category=self.category)
@@ -80,6 +96,7 @@ class DatabaseParser(BaseParser):
                             sheet=table, headers=columns, rows=rows,
                             caption=f"{table} (showing up to {MAX_ROWS_PER_TABLE} of {row_count} rows)",
                         ))
+                        doc.text_blocks.extend(self._row_text_blocks(table, columns, rows))
 
                         # Populated for every table unconditionally, same
                         # reasoning as excel_parser.py -- the structured
@@ -157,6 +174,7 @@ class DatabaseParser(BaseParser):
                 sheet=table, headers=headers, rows=rows[:MAX_ROWS_PER_TABLE],
                 caption=f"{table} (showing up to {MAX_ROWS_PER_TABLE} of {row_count} rows)",
             ))
+            doc.text_blocks.extend(self._row_text_blocks(table, headers, rows))
             # mdb-export has no server-side LIMIT the way a SQL SELECT does
             # -- it always dumps the whole table -- so unlike the SQLite
             # path above, this slices an already-fully-read list rather

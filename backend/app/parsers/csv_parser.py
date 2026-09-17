@@ -11,6 +11,17 @@ from app.parsers.base import BaseParser
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS = 500
+# NER/PII/Financial/Relation extraction (domain_managers.py) only ever
+# runs on doc.full_text() -- the joined text_blocks -- never on
+# doc.tables/full_tables directly. Without a text rendering of actual
+# rows, those agents only ever saw the column-statistics profile below
+# (dtypes, null %, unique counts), which contains no real names, PII, or
+# amounts to find -- entities/PII/financial facts came back empty for
+# every CSV regardless of what the data actually held. Capped well below
+# MAX_PREVIEW_ROWS: this feeds LLM calls (segmented at SEGMENT_CHARS,
+# capped at MAX_SEGMENTS in extraction.py), not the structured store,
+# which already gets the full/near-full data via doc.tables/full_tables.
+MAX_TEXT_PREVIEW_ROWS = 200
 # Ceiling for the *full* (uncapped) copy that feeds the structured-query
 # SQL store (see storage/structured_store.py) -- much larger than the
 # on-screen preview, but still bounded so an accidentally huge upload
@@ -49,6 +60,11 @@ class CSVParser(BaseParser):
                     f"unique={df[col].nunique(dropna=True)}"
                 )
             doc.text_blocks.append(TextBlock(text="\n".join(profile_lines), kind="paragraph"))
+
+            for _, row in df.head(MAX_TEXT_PREVIEW_ROWS).fillna("").astype(str).iterrows():
+                line = "; ".join(f"{col}={val}" for col, val in row.items() if val)
+                if line:
+                    doc.text_blocks.append(TextBlock(text=line, kind="paragraph"))
 
             preview = df.head(MAX_PREVIEW_ROWS).fillna("").astype(str)
             doc.tables.append(TableBlock(
