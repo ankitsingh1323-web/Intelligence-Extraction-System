@@ -94,17 +94,38 @@ RUN retry pip install --no-cache-dir --timeout 100 --retries 5 \
 # succeeded, so re-running `docker compose up --build` resumes at the first
 # group that hasn't completed yet instead of redownloading everything.
 COPY requirements.txt .
-COPY requirements/ ./requirements/
+
+# Each group gets its own COPY immediately before its own RUN, instead of
+# one COPY requirements/ ./requirements/ up front for the whole directory
+# -- with a single shared COPY, Docker's cache treats the whole directory
+# as one unit, so changing just one file (e.g. adding a package to
+# data.txt) invalidates that COPY layer and, being positional, every pip
+# install layer after it too -- re-downloading docling/easyocr/opencv
+# (pdf.txt/ocr.txt, both large) even though neither file's own content
+# changed. Copying each file separately scopes invalidation to that
+# file's own layer and whatever comes after it in this list, matching the
+# per-group retry isolation these are already split into RUN commands for.
+COPY requirements/core.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/core.txt
+COPY requirements/llm.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/llm.txt
+COPY requirements/embeddings.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/embeddings.txt
+COPY requirements/graph.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/graph.txt
+COPY requirements/pdf.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/pdf.txt
+COPY requirements/ocr.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/ocr.txt
+COPY requirements/office.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/office.txt
+COPY requirements/web.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/web.txt
+COPY requirements/data.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/data.txt
+COPY requirements/utils.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/utils.txt
+COPY requirements/storage.txt requirements/
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/storage.txt
 
 # huggingface_hub defaults to its newer "Xet" storage backend for large
