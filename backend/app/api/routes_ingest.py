@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ingest"])
 
 
-async def _finalize_and_start(job: Job, saved_paths: list[str], manager: JobManager) -> Job:
+async def _finalize_and_start(
+    job: Job, saved_paths: list[str], manager: JobManager, obs_metadata: dict[str, dict] | None = None,
+) -> Job:
     """Shared by both ingest paths (browser upload and object storage)
     once every file is sitting in the job's local upload directory --
     from here on the pipeline doesn't care where the bytes originally
@@ -26,6 +28,14 @@ async def _finalize_and_start(job: Job, saved_paths: list[str], manager: JobMana
     files before the job's file list is finalized, so each extracted file
     flows through the normal per-file pipeline like anything else; the
     archive itself is never processed as a "file," only its contents are.
+
+    obs_metadata (only ever non-empty from ingest_from_obs) maps a saved
+    path to its OBS provenance -- source_path/source_folder_path/
+    translated_*, see FileProgress. Keyed by saved path rather than
+    final_path so an OBS-sourced archive's own metadata doesn't need to
+    somehow apply to each of its extracted members individually (it
+    doesn't try to -- an archive's extracted files simply get none, same
+    gap that already exists for archives from a regular upload).
     """
     final_paths: list[str] = []
     archive_warnings: list[str] = []
@@ -44,9 +54,17 @@ async def _finalize_and_start(job: Job, saved_paths: list[str], manager: JobMana
         else:
             final_paths.append(path)
 
-    job.files = [
-        FileProgress(filename=p, category=classify(p), status=JobStatus.QUEUED) for p in final_paths
-    ]
+    obs_metadata = obs_metadata or {}
+    job.files = []
+    for p in final_paths:
+        meta = obs_metadata.get(p, {})
+        job.files.append(FileProgress(
+            filename=p, category=classify(p), status=JobStatus.QUEUED,
+            source_path=meta.get("source_path"),
+            source_folder_path=meta.get("source_folder_path"),
+            translated_source_path=meta.get("translated_source_path"),
+            translated_folder_path=meta.get("translated_folder_path"),
+        ))
     job.warnings = archive_warnings
 
     manager.start(job.job_id, final_paths)
@@ -117,7 +135,7 @@ async def ingest_from_obs(body: ObsIngestRequest) -> Job:
         raise HTTPException(400, "No objects selected.")
     settings = get_settings()
 
-    downloads: list[tuple[str, bytes]] = []
+    downloads: list[tuple[str, bytes, str]] = []  # (local filename, content, original OBS key)
     for key in body.keys:
         try:
             content = await obs_client.download_object(body.credential_id, key)
@@ -127,11 +145,46 @@ async def ingest_from_obs(body: ObsIngestRequest) -> Job:
             raise HTTPException(502, f'Failed to download "{key}" from object storage: {exc}')
         if len(content) > settings.max_upload_mb * 1024 * 1024:
             raise HTTPException(413, f'"{key}" exceeds max upload size of {settings.max_upload_mb} MB.')
-        downloads.append((_local_filename_for_key(key), content))
+        downloads.append((_local_filename_for_key(key), content, key))
+
+    # The bucket's folder structure is metadata worth keeping beyond the
+    # flattened local filename above, and its folder/file names may be in
+    # a different language than the pipeline's target (a common real case:
+    # Arabic folder names on an on-prem OBS deployment) -- translate the
+    # distinct segment set across just the selected keys in one batch
+    # (see agents/translation.translate_path_segments) rather than
+    # per-file, then attach both the original and translated breadcrumb
+    # to each file's FileProgress below.
+    from app.agents.translation import translate_path_segments
+
+    parsed: dict[str, tuple[list[str], str]] = {}
+    all_segments: set[str] = set()
+    for _, _, key in downloads:
+        folder_path, filename = key.strip("/").split("/")[:-1], key.strip("/").split("/")[-1]
+        parsed[key] = (folder_path, filename)
+        all_segments.update(folder_path)
+        all_segments.add(filename)
+    translations = await translate_path_segments(sorted(all_segments))
 
     manager = get_job_manager()
-    job = manager.create_job(file_paths=[name for name, _ in downloads])
-    saved_paths = [await save_upload(job.job_id, name, content) for name, content in downloads]
+    job = manager.create_job(file_paths=[name for name, _, _ in downloads])
+
+    obs_metadata: dict[str, dict] = {}
+    saved_paths: list[str] = []
+    for name, content, key in downloads:
+        saved_path = await save_upload(job.job_id, name, content)
+        saved_paths.append(saved_path)
+        folder_path, filename = parsed[key]
+        translated_folder = [translations.get(p, p) for p in folder_path]
+        translated_filename = translations.get(filename, filename)
+        was_translated = translated_folder != folder_path or translated_filename != filename
+        obs_metadata[saved_path] = {
+            "source_path": key,
+            "source_folder_path": folder_path,
+            "translated_source_path": "/".join([*translated_folder, translated_filename]) if was_translated else None,
+            "translated_folder_path": translated_folder if was_translated else None,
+        }
+
     # No OBS mirror here -- every one of these files already lives in this
     # exact bucket; pushing a copy of it back to itself would be pointless.
-    return await _finalize_and_start(job, saved_paths, manager)
+    return await _finalize_and_start(job, saved_paths, manager, obs_metadata)

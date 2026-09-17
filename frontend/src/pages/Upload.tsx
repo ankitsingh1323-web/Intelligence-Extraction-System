@@ -248,7 +248,12 @@ export default function UploadPage() {
                 {obsObjects.map((o) => (
                   <label key={o.key} className="obs-object-row">
                     <input type="checkbox" checked={obsSelected.has(o.key)} onChange={() => toggleObsKey(o.key)} />
-                    <span className="file-name mono small">{o.key}</span>
+                    <span className="file-name mono small">
+                      {o.key}
+                      {o.translated_key && o.translated_key !== o.key && (
+                        <span className="muted small obs-translated-key"> ({o.translated_key})</span>
+                      )}
+                    </span>
                     <span className="file-size">{formatSize(o.size)}</span>
                   </label>
                 ))}

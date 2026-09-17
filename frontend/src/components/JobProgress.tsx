@@ -127,6 +127,11 @@ export function JobProgress({ job }: { job: Job }) {
                           translated: {f.detected_language}
                         </span>
                       )}
+                      {f.source_path && (
+                        <span className="source-path-chip" title={`Original bucket path: ${f.source_path}`}>
+                          from: {f.translated_source_path ?? f.source_path}
+                        </span>
+                      )}
                     </div>
                     <FileDetail job={job} f={f} />
                     {f.error && <ErrorText text={f.error} />}

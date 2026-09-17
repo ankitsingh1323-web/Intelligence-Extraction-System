@@ -125,3 +125,94 @@ async def translate_document(
         # is not a quality issue.
 
     return doc
+
+
+def _split_stem_ext(segment: str) -> tuple[str, str]:
+    """Splits a path segment into (stem, extension) so translation only
+    ever touches the human-readable part -- a literal file extension like
+    ".pdf" should never be sent through translation, even though
+    TRANSLATE_SYSTEM already asks the model to preserve structure exactly.
+    A leading dot (".gitignore"-style) is not treated as an extension."""
+    if "." in segment and not segment.startswith("."):
+        idx = segment.rfind(".")
+        return segment[:idx], segment[idx:]
+    return segment, ""
+
+
+async def translate_path_segments(
+    segments: list[str], unreachable_backends: set[str] | None = None
+) -> dict[str, str]:
+    """Batch-translates folder/file NAME segments (not full paths -- split
+    a path into its parts first) to the configured target language, used
+    for object-storage bucket listings that may be in a different
+    language (e.g. Arabic folder names) than the pipeline's working
+    language. An OBS listing can return hundreds of objects that all
+    repeat the same handful of folder names, so the caller should collect
+    the *distinct* segment set across a whole listing and call this once,
+    rather than once per object -- both far cheaper and guarantees the
+    same folder name comes back identically translated everywhere it
+    appears in that listing.
+
+    Returns a dict of only the segments that were actually translated
+    (extension re-attached, stem translated) -- a segment langdetect
+    can't confidently call non-target-language (too short, already
+    English, ambiguous), or that fails to translate, is left OUT of the
+    result entirely. Callers must fall back to the original segment for
+    any key not present, never assume every input key comes back.
+    """
+    unreachable_backends = unreachable_backends or set()
+    settings = get_settings()
+    target = settings.translation_target_lang
+
+    stems: dict[str, str] = {}  # original segment -> its stem (extension stripped)
+    for seg in dict.fromkeys(segments):  # de-dup, preserve first-seen order
+        stem, _ext = _split_stem_ext(seg)
+        if len(stem.strip()) < 2:
+            continue
+        lang = _detect_language(stem)
+        if lang and lang != target:
+            stems[seg] = stem
+
+    if not stems:
+        return {}
+
+    backend = get_llm_client().backend_for_role("translation")
+    if backend in unreachable_backends:
+        return {}
+
+    client = get_llm_client()
+    system = TRANSLATE_SYSTEM.format(target=target)
+    result: dict[str, str] = {}
+
+    async def _flush(batch_originals: list[str]) -> None:
+        if not batch_originals:
+            return
+        joined = _BLOCK_SEP.join(stems[o] for o in batch_originals)
+        try:
+            resp = await client.complete("translation", system, joined, max_tokens=2048)
+        except Exception:
+            logger.exception("Path-segment translation failed for a batch")
+            return
+        parts = resp.text.split(_BLOCK_SEP)
+        if len(parts) != len(batch_originals):
+            logger.warning("Path-segment translation delimiter mismatch -- discarding this batch")
+            return
+        for orig, translated_stem in zip(batch_originals, parts):
+            _stem, ext = _split_stem_ext(orig)
+            result[orig] = translated_stem.strip() + ext
+
+    # Same batching rationale as translate_document above -- a listing
+    # with hundreds of unique folder/file names shouldn't risk one call
+    # exceeding the model's practical output size.
+    batch: list[str] = []
+    batch_len = 0
+    for original in stems:
+        blen = len(stems[original])
+        if batch and batch_len + blen > _BATCH_CHARS:
+            await _flush(batch)
+            batch, batch_len = [], 0
+        batch.append(original)
+        batch_len += blen
+    await _flush(batch)
+
+    return result

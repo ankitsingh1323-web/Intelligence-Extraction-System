@@ -25,6 +25,10 @@ export interface FileProgress {
   chunks_found: number;
   batch?: number | null;
   importance_reason?: string | null;
+  source_path?: string | null;
+  source_folder_path?: string[] | null;
+  translated_source_path?: string | null;
+  translated_folder_path?: string[] | null;
 }
 
 export interface BatchSummary {
@@ -326,6 +330,9 @@ export interface OBSObjectSummary {
   key: string;
   size: number;
   last_modified: string;
+  folder_path: string[];
+  translated_key?: string | null;
+  translated_folder_path?: string[] | null;
 }
 
 export interface OBSBrowseResult {

@@ -137,7 +137,18 @@ async def mirror_upload(job_id: str, filename: str, content: bytes) -> None:
         )
 
 
-async def list_objects(credential_id: str, prefix: str, max_keys: int = 500) -> tuple[list[dict], bool]:
+def _key_parts(key: str) -> tuple[list[str], str]:
+    """Splits an object key into (folder_path, filename) -- a bucket's
+    "/"-delimited prefixes are its closest thing to folders, so this is
+    the structure a foreign-language bucket layout (e.g. Arabic folder
+    names) has to offer beyond the flat filename alone."""
+    parts = key.strip("/").split("/")
+    return parts[:-1], parts[-1]
+
+
+async def list_objects(
+    credential_id: str, prefix: str, max_keys: int = 500, unreachable_backends: set[str] | None = None
+) -> tuple[list[dict], bool]:
     """Lists objects under `prefix` in the credential's bucket -- the
     browse step behind the Upload page's "start analysis from object
     storage" flow (list what's there, the user ticks which ones to bring
@@ -154,6 +165,15 @@ async def list_objects(credential_id: str, prefix: str, max_keys: int = 500) -> 
     more than max_keys matching objects, so the caller can tell the user
     to narrow the prefix instead of silently showing a partial list as
     if it were everything.
+
+    A bucket's folder/file names are just whatever the deployment that
+    wrote them used -- often not English (a common real case: Arabic
+    folder names in an on-prem OBS deployment). Every object's folder
+    path and filename are translated as one batch across the whole
+    listing (see agents/translation.translate_path_segments) so the
+    browse UI can show something readable regardless, alongside the
+    original -- never replacing it, since the untranslated key is still
+    what's actually downloaded.
     """
     credential = _require_credential(credential_id)
 
@@ -174,7 +194,41 @@ async def list_objects(credential_id: str, prefix: str, max_keys: int = 500) -> 
         ]
         return objects, bool(resp.get("IsTruncated"))
 
-    return await asyncio.to_thread(_list)
+    objects, truncated = await asyncio.to_thread(_list)
+
+    # Local import: obs_client is storage-layer and agents/translation.py
+    # is pipeline-layer -- keeping the dependency one-directional (only
+    # this function reaches up into it, not a module-level import) avoids
+    # a storage <-> agents import cycle on startup.
+    from app.agents.translation import translate_path_segments
+
+    all_segments: set[str] = set()
+    parsed_keys: dict[str, tuple[list[str], str]] = {}
+    for obj in objects:
+        folder_path, filename = _key_parts(obj["key"])
+        parsed_keys[obj["key"]] = (folder_path, filename)
+        all_segments.update(folder_path)
+        all_segments.add(filename)
+
+    translations = await translate_path_segments(sorted(all_segments), unreachable_backends)
+
+    for obj in objects:
+        folder_path, filename = parsed_keys[obj["key"]]
+        obj["folder_path"] = folder_path
+        if not translations:
+            obj["translated_key"] = None
+            obj["translated_folder_path"] = None
+            continue
+        translated_folder = [translations.get(p, p) for p in folder_path]
+        translated_filename = translations.get(filename, filename)
+        if translated_folder == folder_path and translated_filename == filename:
+            obj["translated_key"] = None
+            obj["translated_folder_path"] = None
+        else:
+            obj["translated_key"] = "/".join([*translated_folder, translated_filename])
+            obj["translated_folder_path"] = translated_folder
+
+    return objects, truncated
 
 
 async def download_object(credential_id: str, key: str) -> bytes:

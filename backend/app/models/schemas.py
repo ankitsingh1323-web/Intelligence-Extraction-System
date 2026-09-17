@@ -222,10 +222,23 @@ class OBSObjectSummary(BaseModel):
     """One object returned by browsing a bucket/prefix -- see
     storage/obs_client.list_objects. key is the full object key (path
     within the bucket), used both for display and as what the user
-    selects to bring into a new analysis job."""
+    selects to bring into a new analysis job.
+
+    folder_path is the key's "/"-delimited prefixes as a list, e.g.
+    ["Contracts", "2026"] for key "Contracts/2026/invoice.pdf" -- a
+    bucket's closest thing to folder structure, offered as metadata
+    beyond the flat filename alone. translated_key/translated_folder_path
+    are populated only when the key's folder names or filename were
+    detected as a different language than the pipeline's target and
+    successfully translated (e.g. Arabic folder names) -- None otherwise.
+    Translation is display-only: `key` is always what's actually
+    downloaded, never the translated form."""
     key: str
     size: int
     last_modified: str
+    folder_path: list[str] = []
+    translated_key: str | None = None
+    translated_folder_path: list[str] | None = None
 
 
 class OBSBrowseResult(BaseModel):
@@ -556,6 +569,19 @@ class FileProgress(BaseModel):
     # 1-indexed processing order, None on jobs too small to batch.
     batch: int | None = None
     importance_reason: str | None = None
+    # Populated only for files ingested from Object Storage (see
+    # api.routes_ingest.ingest_from_obs) -- the object's original bucket
+    # key/folder path, since the local `filename` above is a flattened,
+    # collision-safe version of it (see _local_filename_for_key) that
+    # loses the folder structure on its own. translated_* mirrors are set
+    # only when a folder/file name segment was detected as a different
+    # language than the pipeline's target and successfully translated
+    # (e.g. Arabic folder names) -- None for an already-target-language
+    # source or a regular browser upload.
+    source_path: str | None = None
+    source_folder_path: list[str] | None = None
+    translated_source_path: str | None = None
+    translated_folder_path: list[str] | None = None
 
 
 class AgentActivity(BaseModel):
