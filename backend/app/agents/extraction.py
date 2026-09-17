@@ -270,7 +270,7 @@ async def run_summary(text: str) -> str:
         return ""
     client = get_llm_client()
     try:
-        resp = await client.complete("extraction", SUMMARY_SYSTEM, text[:SEGMENT_CHARS], max_tokens=300)
+        resp = await client.complete("extraction", SUMMARY_SYSTEM, text[:SEGMENT_CHARS], max_tokens=700)
         return resp.text.strip()
     except Exception:
         logger.exception("Summary generation failed")

@@ -311,7 +311,7 @@ async def _answer_question_impl(
 
     try:
         resp = await client.complete(
-            "chat", CHAT_SYSTEM, user_prompt, temperature=0.2, max_tokens=1024,
+            "chat", CHAT_SYSTEM, user_prompt, temperature=0.2, max_tokens=2048,
             backend_override=effective_backend,
         )
         answer_text = resp.text.strip()

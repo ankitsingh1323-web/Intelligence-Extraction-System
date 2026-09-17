@@ -328,7 +328,13 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False, job: J
         finish_activity(llm_activity, "skipped")
     else:
         try:
-            raw = await client.complete_json("synthesis", SYNTHESIS_SYSTEM, digest, max_tokens=2048)
+            # A large nested JSON object (BIReport-shaped), and the most
+            # complex single output this app asks any model for -- given a
+            # generous starting budget rather than relying purely on
+            # complete()'s automatic doubling (see
+            # LLMReasoningBudgetExceededError) to get there after a wasted
+            # round trip.
+            raw = await client.complete_json("synthesis", SYNTHESIS_SYSTEM, digest, max_tokens=8192)
             finish_activity(llm_activity, "completed")
         except Exception:
             logger.exception("Synthesis LLM call failed")

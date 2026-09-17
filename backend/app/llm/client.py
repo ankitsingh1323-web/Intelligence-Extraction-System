@@ -17,6 +17,12 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Hard ceiling on how far complete()'s automatic budget-doubling (see
+# LLMReasoningBudgetExceededError) will raise max_tokens for one call, so
+# a backend that never actually finishes reasoning can't be retried into
+# an enormous, slow, expensive request.
+_MAX_TOKENS_CEILING = 16384
+
 
 class LLMJSONParseError(Exception):
     """The model's response couldn't be parsed as JSON even after the
@@ -26,6 +32,20 @@ class LLMJSONParseError(Exception):
     log extraction/synthesis failures by step and source file; swallowing
     it here instead would erase that attribution and look identical to a
     real empty result."""
+
+
+class LLMReasoningBudgetExceededError(Exception):
+    """A reasoning/chain-of-thought-capable backend (seen in practice with
+    Kimi-K2 variants served over vLLM) can spend its entire max_tokens
+    budget on an internal reasoning trace -- a separate field from the
+    actual answer -- and hit the token cap before writing any real
+    content. The response still comes back as a normal 200 OK with
+    finish_reason="length" and an empty message.content, which used to
+    surface many calls downstream as a bare, unhelpful
+    `json.JSONDecodeError: Expecting value: line 1 column 1 (char 0)` with
+    no indication of the real cause. complete() below already retries
+    once with a doubled budget before raising this -- reaching this error
+    means even that wasn't enough."""
 
 
 @dataclass
@@ -117,7 +137,7 @@ class LLMClient:
         *,
         json_mode: bool = False,
         temperature: float = 0.1,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         backend_override: str | None = None,
     ) -> LLMResponse:
         """backend_override: bypass the role -> backend mapping and force a
@@ -148,7 +168,36 @@ class LLMClient:
             try:
                 resp = await client.chat.completions.create(**kwargs)
                 elapsed_ms = int((asyncio.get_event_loop().time() - start) * 1000)
-                choice = resp.choices[0].message.content or ""
+                choice_data = resp.choices[0]
+                choice = choice_data.message.content or ""
+
+                # See LLMReasoningBudgetExceededError -- a reasoning-capable
+                # backend can spend the whole max_tokens budget on its own
+                # chain-of-thought and hit the cap (finish_reason="length")
+                # before writing any real content, which is NOT the same
+                # thing as the model legitimately having nothing to say
+                # (that comes back as finish_reason="stop" with real, if
+                # short, content). Self-heal by doubling the budget and
+                # retrying immediately -- reuses this same attempt loop --
+                # instead of making every deployment hand-tune max_tokens
+                # per model's reasoning verbosity.
+                if not choice.strip() and choice_data.finish_reason == "length":
+                    if kwargs["max_tokens"] < _MAX_TOKENS_CEILING:
+                        new_budget = min(kwargs["max_tokens"] * 2, _MAX_TOKENS_CEILING)
+                        logger.warning(
+                            "%s returned empty content with finish_reason=length at max_tokens=%s "
+                            "(likely spent on internal reasoning) -- retrying once with max_tokens=%s",
+                            backend, kwargs["max_tokens"], new_budget,
+                        )
+                        kwargs["max_tokens"] = new_budget
+                        continue
+                    raise LLMReasoningBudgetExceededError(
+                        f"{backend} (model '{model}') returned no content after exhausting "
+                        f"max_tokens={kwargs['max_tokens']} (finish_reason=length), even after doubling "
+                        f"the budget once -- this backend appears to spend an unusually large token "
+                        f"budget on internal reasoning before answering."
+                    )
+
                 usage = resp.usage
                 return LLMResponse(
                     text=choice,

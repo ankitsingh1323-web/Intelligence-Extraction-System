@@ -93,7 +93,7 @@ async def translate_document(
     for batch in batches:
         joined = _BLOCK_SEP.join(blocks[i].text for i in batch)
         try:
-            resp = await client.complete("translation", system, joined, max_tokens=4096)
+            resp = await client.complete("translation", system, joined, max_tokens=6144)
         except Exception:
             logger.exception("Translation failed for a batch in %s", doc.source_file)
             doc.warnings.append(
@@ -189,7 +189,7 @@ async def translate_path_segments(
             return
         joined = _BLOCK_SEP.join(stems[o] for o in batch_originals)
         try:
-            resp = await client.complete("translation", system, joined, max_tokens=2048)
+            resp = await client.complete("translation", system, joined, max_tokens=4096)
         except Exception:
             logger.exception("Path-segment translation failed for a batch")
             return

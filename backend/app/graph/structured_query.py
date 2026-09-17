@@ -167,7 +167,7 @@ async def _narrate(client, question: str, headers: list[str], rows: list[list[st
     table_text = " | ".join(headers) + "\n" + "\n".join(" | ".join(r) for r in rows)
     user_prompt = f"Question: {question}\n\nQuery result:\n{table_text}"
     try:
-        resp = await client.complete("chat", SUMMARY_SYSTEM, user_prompt, temperature=0.0, max_tokens=120)
+        resp = await client.complete("chat", SUMMARY_SYSTEM, user_prompt, temperature=0.0, max_tokens=500)
     except Exception:
         logger.exception("Structured-answer narration failed -- falling back to the templated summary.")
         return None
@@ -187,7 +187,7 @@ async def answer_structured_question(job_id: str, message: str) -> ChatResponse 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             resp = await client.complete(
-                "chat", SQL_SYSTEM, base_prompt + error_context, temperature=0.0, max_tokens=300
+                "chat", SQL_SYSTEM, base_prompt + error_context, temperature=0.0, max_tokens=1200
             )
         except Exception:
             logger.exception("SQL generation failed for job %s (attempt %s)", job_id, attempt)
